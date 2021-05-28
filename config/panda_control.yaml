@@ -55,6 +55,19 @@
         gains: [
             1, 1, 1, 1, 1, 1, 1
         ]
-        cartesian_pose_controller:
-            type: franka_example_controllers/CartesianPoseExampleController
-            arm_id: panda
+    
+    cartesian_pose_controller:
+        type: panda_simulation/CartesianPoseController
+        joint_names:
+            - panda_joint1
+            - panda_joint2
+            - panda_joint3
+            - panda_joint4
+            - panda_joint5
+            - panda_joint6
+            - panda_joint7
+        gains: [
+            1, 1, 1, 1, 1, 1, 1
+        ]
+        root_name : panda_link0  #define root and ee of the kinematic chain for kinematic inversion
+        tip_name  : panda_link8

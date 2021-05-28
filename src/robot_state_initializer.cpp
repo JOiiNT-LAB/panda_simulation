@@ -9,7 +9,7 @@ int main(int argc, char **argv) {
   std::vector<double> panda_ready_state{{0, -M_PI_4, 0, -3 * M_PI_4, 0, M_PI_2, M_PI_4}};
 
   // define variables
-  std::string joint_position_command_topic{"/joint_position_controller/command"},
+  std::string joint_position_command_topic{"/cartesian_pose_controller/command"},
       controller_manager_switch_topic{"/controller_manager/switch_controller"};
   ros::ServiceClient switch_controller_client =
       node_handle.serviceClient<controller_manager_msgs::SwitchController>(controller_manager_switch_topic);
@@ -21,9 +21,9 @@ int main(int argc, char **argv) {
 
   // 1. switch from default joint trajectory controller to custom position controller
   std::string panda_arm_controller{"panda_arm_controller"}, panda_hand_controller{"panda_hand_controller"},
-      joint_position_controller{"joint_position_controller"};
+      cartesian_pose_controller{"cartesian_pose_controller"};
   std::vector<std::string> stop_controllers{panda_arm_controller, panda_hand_controller};
-  std::vector<std::string> start_controllers{joint_position_controller};
+  std::vector<std::string> start_controllers{cartesian_pose_controller};
 
   controller_manager_msgs::SwitchController srv_switch_controller;
   srv_switch_controller.request.stop_controllers = stop_controllers;

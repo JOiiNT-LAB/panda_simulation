@@ -64,7 +64,7 @@ target_link_libraries(box_publisher_node ${catkin_LIBRARIES})
 target_link_libraries(robot_state_initializer_node ${catkin_LIBRARIES})
 
 # add custom controller as library
-add_library(${PROJECT_NAME}_controllers_lib src/joint_position_controller.cpp )
+add_library(${PROJECT_NAME}_controllers_lib src/cartesian_pose_controller.cpp )
 
 # Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_controllers_lib ${catkin_LIBRARIES})
