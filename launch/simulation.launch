@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <launch>
     <param name="robot_description" command="$(find xacro)/xacro --inorder $(find franka_description)/robots/panda_arm_hand.urdf.xacro" />
+    <param name="arm_description" command="$(find xacro)/xacro --inorder $(find franka_description)/robots/panda_arm.urdf.xacro" />
 
     <!-- GAZEBO arguments -->
     <arg name="paused" default="false" />
@@ -28,7 +29,7 @@
 
 
     <!-- load the controllers -->
-    <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="joint_state_controller cartesian_pose_controller" />
+    <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="joint_state_controller" />
     <node if="$(arg load_gripper)" name="controller_spawner_hand" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="panda_hand_controller" />
 
 
@@ -48,8 +49,8 @@
 
     <node name="joint_state_desired_publisher" pkg="topic_tools" type="relay" args="joint_states joint_states_desired" />
 
-    <!-- launch robot control node for moveit motion planning-->
-    <node pkg="panda_simulation" type="robot_control_node" name="robot_control_node" output="screen" />
+    <!-- launch robot control node for moveit motion planning
+    <node pkg="panda_simulation" type="robot_control_node" name="robot_control_node" output="screen" />-->
 
     <!-- load (not start!) custom joint position controller-->
     <node pkg="controller_manager" type="spawner" name="joint_position_launcher" args="--stopped cartesian_pose_controller" />
@@ -59,4 +60,5 @@
     <!--<node name="move_to_start" pkg="franka_example_controllers" type="move_to_start.py" output="screen" required="true" />
     <node name="controller_spawner_franka" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="cartesian_pose_controller" />
     -->
+    <node name="launch_rqt" pkg="rqt_gui" type="rqt_gui" respawn="false"/>
 </launch>

@@ -18,6 +18,8 @@ find_package(catkin REQUIRED
                         robot_state_publisher
                         roscpp
                         std_msgs
+                        message_generation #
+                        geometry_msgs #
                         tf
                         xacro
                         moveit_core
@@ -34,6 +36,20 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSONCPP jsoncpp)
 message(${JSONCPP_LIBRARIES})
 
+add_message_files(
+   FILES
+   PoseRPY.msg
+   RPY.msg
+   MultiPriorityTask.msg
+   ArmState.msg
+   Stiffness.msg
+)
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+)
 # ################################################################################################################################
 # catkin specific configuration ##
 # ################################################################################################################################
@@ -45,15 +61,20 @@ catkin_package(CATKIN_DEPENDS
                controller_interface
                hardware_interface
                pluginlib
+               geometry_msgs
                DEPENDS
-               system_lib)
+               system_lib
+               message_runtime
+               INCLUDE_DIRS include)
+
+
 
 # ################################################################################################################################
 # Build ##
 # ################################################################################################################################
 
 # Specify additional locations of header files Your package locations should be listed before other locations
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} include)
 
 add_executable(robot_control_node src/robot_control_node.cpp)
 add_executable(box_publisher_node src/box_publisher.cpp)
@@ -68,3 +89,4 @@ add_library(${PROJECT_NAME}_controllers_lib src/cartesian_pose_controller.cpp )
 
 # Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_controllers_lib ${catkin_LIBRARIES})
+

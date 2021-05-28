@@ -28,6 +28,7 @@
   <depend>robot_state_publisher</depend>
   <depend>roscpp</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>tf</depend>
   <depend>xacro</depend>
   <depend>libjsoncpp-dev</depend>
@@ -42,6 +43,9 @@
   <depend>hardware_interface</depend>
 
   <exec_depend>pluginlib</exec_depend>
+
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

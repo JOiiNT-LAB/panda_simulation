@@ -1,6 +1,7 @@
 #include <controller_manager_msgs/SwitchController.h>
 #include <ros/ros.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <panda_simulation/PoseRPY.h>
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "robot_state_initializer_node");
@@ -9,12 +10,12 @@ int main(int argc, char **argv) {
   std::vector<double> panda_ready_state{{0, -M_PI_4, 0, -3 * M_PI_4, 0, M_PI_2, M_PI_4}};
 
   // define variables
-  std::string joint_position_command_topic{"/cartesian_pose_controller/command"},
+  std::string cartesian_position_command_topic{"/cartesian_pose_controller/command"},
       controller_manager_switch_topic{"/controller_manager/switch_controller"};
   ros::ServiceClient switch_controller_client =
       node_handle.serviceClient<controller_manager_msgs::SwitchController>(controller_manager_switch_topic);
-  ros::Publisher joint_position_publisher =
-      node_handle.advertise<std_msgs::Float64MultiArray>(joint_position_command_topic, 1);
+  ros::Publisher cartesian_position_publisher =
+      node_handle.advertise<panda_simulation::PoseRPY>(cartesian_position_command_topic, 1);
 
   // sleep for 2 seconds in order to make sure that the system is up and running
   ros::Duration(2.0).sleep();
@@ -49,15 +50,26 @@ int main(int argc, char **argv) {
   }
 
   // 2. publish the desired joint position to the custom controller
-  std_msgs::Float64MultiArray command_msg;
-  command_msg.data = panda_ready_state;
-  joint_position_publisher.publish(command_msg);
+  panda_simulation::PoseRPY command_msg;
+
+  command_msg.id                 = 0.0;
+  command_msg.orientation.roll   = 0.0;
+  command_msg.orientation.pitch  = 1.0;
+  command_msg.orientation.yaw    = 0.0;
+  command_msg.position.x         = 0.2;
+  command_msg.position.y         = 0.0;
+  command_msg.position.z         = 0.8;
+
+  /*std_msgs::Float64MultiArray command_msg;
+  command_msg.data = panda_ready_state;*/
+
+  cartesian_position_publisher.publish(command_msg);
 
   // sleep for 1 seconds in order to make sure that the controller finishes moving the robot
   ros::Duration(1.0).sleep();
 
   // 3. Restore default controllers
-  std::swap(stop_controllers, start_controllers);
+  /*std::swap(stop_controllers, start_controllers);
   srv_switch_controller.request.stop_controllers = stop_controllers;
   srv_switch_controller.request.start_controllers = start_controllers;
 
@@ -68,7 +80,7 @@ int main(int argc, char **argv) {
     ROS_WARN_STREAM("Error switching controllers from " << stream_stop_controllers.str() << " to "
                                                         << stream_start_controllers.str());
     return -1;
-  }
+  }*/
 
   ros::spin();
   return 0;

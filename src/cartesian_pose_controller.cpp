@@ -22,11 +22,16 @@
 #include <tf/transform_datatypes.h>
 #include <tf/transform_listener.h>
 #include <tf_conversions/tf_kdl.h>
+#include <eigen3/Eigen/LU>
 #include <cstring>
 #include <iostream>
 using namespace std;
 #include <stdio.h>
 using namespace KDL;
+#include <panda_simulation/PoseRPY.h>
+
+#include <utils/pseudo_inversion.h>
+#include <utils/skew_symmetric.h>
 
 namespace panda_simulation {
 
@@ -50,28 +55,24 @@ class CartesianPoseController : public controller_interface::Controller<hardware
       joint_handles_.push_back(hw->getHandle(joint_name));
     }
 
-    for (auto &joint_handle : joint_handles_) {
-      command_.push_back(joint_handle.getPosition());
-    }
-
     ////////////////////////////////////////////////////////////////////////////
     /////////////////     DEFINE ROBOT CHAIN          /////////////////////////
     ///////////////////////////////////////////////////////////////////////////
 
-    std::string robot_description, root_name, tip_name;
+    std::string arm_description, root_name, tip_name;
     KDL::Tree kdl_tree_;
     unsigned int num_joints;
-    if (!ros::param::search(n.getNamespace(),"robot_description", robot_description))
+    if (!ros::param::search(n.getNamespace(),"arm_description", arm_description))
             {
-                ROS_ERROR_STREAM("KinematicChainControllerBase: No robot description (URDF) found on parameter server ("<<n.getNamespace()<<"/robot_description)");
+                ROS_ERROR_STREAM("KinematicChainControllerBase: No robot description (URDF) found on parameter server ("<<n.getNamespace()<<"/arm_description)");
                 return false;
             }
    std::string xml_string;
-   if (n.hasParam(robot_description))
-       n.getParam(robot_description.c_str(), xml_string);
+   if (n.hasParam(arm_description))
+       n.getParam(arm_description.c_str(), xml_string);
    else
    {
-       ROS_ERROR("Parameter %s not set, shutting down node...", robot_description.c_str());
+       ROS_ERROR("Parameter %s not set, shutting down node...", arm_description.c_str());
        n.shutdown();
        return false;
    }
@@ -89,11 +90,11 @@ class CartesianPoseController : public controller_interface::Controller<hardware
 
    if (xml_string.size() == 0)
            {
-               ROS_ERROR("Unable to load robot model from parameter %s",robot_description.c_str());
+               ROS_ERROR("Unable to load robot model from parameter %s",arm_description.c_str());
                n.shutdown();
                return false;
            }
-    ROS_DEBUG("%s content\n%s", robot_description.c_str(), xml_string.c_str());
+    ROS_DEBUG("%s content\n%s", arm_description.c_str(), xml_string.c_str());
 
     urdf::Model model;
     if (!model.initString(xml_string))
@@ -112,7 +113,7 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     }
     printf("root name %s \n",root_name.c_str());
     printf("tip name %s \n",tip_name.c_str());
-    printf("robot name %s \n",robot_description.c_str());
+    printf("robot name %s \n",arm_description.c_str());
     printf("tree size %i \n",kdl_tree_.getNrOfJoints());
     printf("tree n segments %i \n",kdl_tree_.getNrOfSegments());
 
@@ -132,122 +133,224 @@ class CartesianPoseController : public controller_interface::Controller<hardware
         return false;
     }
 
-    sub_command_ = n.subscribe<std_msgs::Float64MultiArray>(std::string("command"), 1,
-                                                            &CartesianPoseController::setCommandCallback, this);//\brief robot_description
+    q_cmd_.resize(kdl_chain_.getNrOfJoints());
+    J_.resize(kdl_chain_.getNrOfJoints());
+       
+    joint_msr_states_.resize(kdl_chain_.getNrOfJoints());
+    joint_des_states_.resize(kdl_chain_.getNrOfJoints());
+    // get joint positions
+    for(int i=0; i < joint_handles_.size(); i++)
+    {
+        joint_msr_states_.q(i) = joint_handles_[i].getPosition();
+        joint_msr_states_.qdot(i) = joint_handles_[i].getVelocity();
+        joint_des_states_.q(i) = joint_msr_states_.q(i);
+    }
+
+    // computing forward kinematics
+    jnt_to_jac_solver_.reset(new KDL::ChainJntToJacSolver(kdl_chain_));
+    fk_pos_solver_.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_));
+    fk_pos_solver_->JntToCart(joint_msr_states_.q, x_);
+
     
- 
-    return true;
+    //Desired posture is the current one
+    x_des_ = x_;
+
+    cmd_flag_ = 0;
+    
+
+    /*sub_command_ = n.subscribe<std_msgs::Float64MultiArray>(std::string("command"), 1,
+                                                            &CartesianPoseController::setCommandCallback, this);//\brief arm_description*/
+    
+    sub_command_ = n.subscribe("command", 1, &CartesianPoseController::setCommandCallback, this);
+
+        return true;
   }
   
   
 
   void update(const ros::Time &time, const ros::Duration &period) {
-    
-    geometry_msgs::PoseStamped pose_msg_in;
-    pose_msg_in.header.frame_id="/ee";
-    pose_msg_in.header.stamp = ros::Time::now();
-    pose_msg_in.pose.position.x = 0.0;
-    pose_msg_in.pose.position.y = 0.0;
-    pose_msg_in.pose.position.z = 0.3;
-    pose_msg_in.pose.orientation.x = 0.0;
-    pose_msg_in.pose.orientation.y = 0.0;
-    pose_msg_in.pose.orientation.z = 0.0;
-    pose_msg_in.pose.orientation.w = 1.0;
+    // get joint positions
+        for(int i=0; i < joint_handles_.size(); i++)
+        {
+            joint_msr_states_.q(i) = joint_handles_[i].getPosition();
+        }
+        
+        //printf("%i",cmd_flag_);
 
-    for (size_t i = 0; i < joint_handles_.size(); i++) {
-    
-    getinversekinematic(pose_msg_in);
-      
-      command_.at(i) = jnt_des_ik(i);
-      double error = command_.at(i) - joint_handles_.at(i).getPosition();
-      //std::cout<<jnt_des_ik(i)<<std::endl;
-      double commanded_effort = error * gains_vec_.at(i);
+        if (cmd_flag_)
+        {
 
-      joint_handles_.at(i).setCommand(commanded_effort);
-      
+            // computing forward kinematics
+            fk_pos_solver_->JntToCart(joint_msr_states_.q, x_);
+
+            // end-effector position error
+            x_err_.vel = x_des_.p - x_.p;
+            // getting quaternion from rotation matrix
+            x_.M.GetQuaternion(quat_curr_.v(0),quat_curr_.v(1),quat_curr_.v(2),quat_curr_.a);
+            x_des_.M.GetQuaternion(quat_des_.v(0),quat_des_.v(1),quat_des_.v(2),quat_des_.a);
+
+            skew_symmetric(quat_des_.v, skew_);
+
+            for (int i = 0; i < skew_.rows(); i++)
+            {
+                v_temp_(i) = 0.0;
+                for (int k = 0; k < skew_.cols(); k++)
+                    v_temp_(i) += skew_(i,k)*(quat_curr_.v(k));
+            }
+
+            // end-effector orientation error
+            x_err_.rot = quat_curr_.a*quat_des_.v - quat_des_.a*quat_curr_.v - v_temp_;
+
+            
+            // computing Jacobian
+            jnt_to_jac_solver_->JntToJac(joint_msr_states_.q, J_);
+            
+
+            // computing J_pinv_
+            pseudo_inverse(J_.data, J_pinv_);
+
+            // computing q_dot
+            for (int i = 0; i < J_pinv_.rows(); i++)
+            {
+                joint_des_states_.qdot(i) = 0.0;
+                for (int k = 0; k < J_pinv_.cols(); k++)
+                    joint_des_states_.qdot(i) += J_pinv_(i,k)*x_err_(k); //removed scaling factor of .7
+          
+            }
+
+            
+            // integrating q_dot -> getting q (Euler method)
+            for (int i = 0; i < joint_handles_.size(); i++)
+                joint_des_states_.q(i) += period.toSec()*joint_des_states_.qdot(i);
+
+            // joint limits saturation
+            /*for (int i =0;  i < joint_handles_.size(); i++)
+            {
+                if (joint_des_states_.q(i) < joint_limits_.min(i))
+                    joint_des_states_.q(i) = joint_limits_.min(i);
+                if (joint_des_states_.q(i) > joint_limits_.max(i))
+                    joint_des_states_.q(i) = joint_limits_.max(i);
+            }*/
+
+            if (Equal(x_, x_des_, 0.005))
+            {
+                ROS_INFO("On target");
+                cmd_flag_ = 0;
+                printf("Position reached \n");
+            }
+        }
+    
+    for (int i = 0; i < joint_handles_.size(); i++)
+    {
+        joint_handles_[i].setCommand(joint_des_states_.q(i));
     }
   }
 
-  void setCommandCallback(const std_msgs::Float64MultiArrayConstPtr &msg) {
-
+  void setCommandCallback(const panda_simulation::PoseRPY::ConstPtr &msg) {
     
+     printf("DEBUG callback \n");
+     KDL::Frame frame_des_;
 
-    //getinversekinematic(pose_msg_in); 
+        switch(msg->id)
+        {
+            case 0:
+            frame_des_ = KDL::Frame(
+                    KDL::Rotation::RPY(msg->orientation.roll,
+                                      msg->orientation.pitch,
+                                      msg->orientation.yaw),
+                    KDL::Vector(msg->position.x,
+                                msg->position.y,
+                                msg->position.z));
+            break;
 
-    //for (size_t i = 0; i < joint_handles_.size(); i++) {
-    //  command_.at(i) = jnt_des_ik(i);
-    //}
+            case 1: // position only
+            frame_des_ = KDL::Frame(
+                KDL::Vector(msg->position.x,
+                            msg->position.y,
+                            msg->position.z));
+            break;
 
+            case 2: // orientation only
+            frame_des_ = KDL::Frame(
+                KDL::Rotation::RPY(msg->orientation.roll,
+                                   msg->orientation.pitch,
+                                   msg->orientation.yaw));
+            break;
+
+            default:
+            ROS_INFO("Wrong message ID");
+            return;
+        }
+
+        x_des_ = frame_des_;
+        cmd_flag_ = 1;
     }
 
-  void starting(const ros::Time &time) {}
+  void starting(const ros::Time &time) {
+    printf("DEBUG Staring \n");
+  }
 
   void stopping(const ros::Time &time) {}
   
-  void getinversekinematic(const geometry_msgs::PoseStamped &pose_msg_in){
+  /*void getinversekinematic(){
 
-    tf::Stamped<tf::Pose> transform;
-    tf::Stamped<tf::Pose> transform_root;
-    tf::poseStampedMsgToTF( pose_msg_in, transform );
-    //std::cout<<pose_msg_in<<std::endl;
-    // Create solver based on kinematic chain
     ChainFkSolverPos_recursive fk_solver_ = ChainFkSolverPos_recursive(kdl_chain_);
     ChainIkSolverVel_pinv ik_solver_vel_ = ChainIkSolverVel_pinv(kdl_chain_);
     ChainIkSolverPos_NR ik_solver_(kdl_chain_, fk_solver_, ik_solver_vel_, 1000, 100);
 
-    tf::TransformListener tf_listener;
-    KDL::JntArray jnt_pos_in((kdl_chain_.getNrOfJoints()));
-    jnt_des_ik.resize(kdl_chain_.getNrOfJoints());
+    KDL::JntArray jnt_pos_in_((kdl_chain_.getNrOfJoints()));
+    jnt_des_ik_.resize(kdl_chain_.getNrOfJoints());
 
     //Convert F to our root_frame
     //tf_listener.transformPose(root_name, transform, transform_root);
        
-    KDL::Frame F_dest;
-    //tf::TransformTFToKDL(transform_root, F_dest); // origin,end_effector_pose,result
-    tf::TransformTFToKDL(transform, F_dest); // origin,end_effector_pose,result
-
-    //printf("chain size %i \n",kdl_chain_.getNrOfJoints());
-
     for (unsigned int i = 0; i < kdl_chain_.getNrOfJoints(); i++){
-            jnt_pos_in(i) = joint_handles_[i].getPosition();
+            jnt_pos_in_(i) = joint_handles_[i].getPosition();
         }
 
-    //printf("init joints: \n");
-    //for (unsigned int i = 0; i < kdl_chain_.getNrOfJoints(); i++){
-    //        printf("%f \n",jnt_pos_in(i));
-    //    }
-
-    //printf("Starting direct kinematic \n");
-    //bool kinematics_status1;
-    //kinematics_status1 = fk_solver_.JntToCart(jnt_pos_in,F_dest);
-    //if(kinematics_status1>=0){
-    //    printf("%s \n","Succes fk, thanks KDL!");
-    //}else{
-    //    printf("%s \n","Error: could not calculate forward kinematics :(");
-    //}
-
-
-    //printf("Starting inverse kinematic \n");
     bool kinematics_status;
-    kinematics_status = ik_solver_.CartToJnt(jnt_pos_in,F_dest,jnt_des_ik);
-   // if (kinematics_status>=0){
-       //printf("Succesfull IK \n");
-   //    }
-    //printf("Inverse kinematic completed \n");
+    kinematics_status = ik_solver_.CartToJnt(jnt_pos_in_,x_des_,jnt_des_ik_);
 
-    //printf("desired joints: \n");
-    //for (unsigned int i = 0; i < kdl_chain_.getNrOfJoints(); i++){
-    //        printf("%f \n",jnt_des_ik(i));
-    //    }
-  }
+  }*/
 
 private:
   std::vector<hardware_interface::JointHandle> joint_handles_;
   std::vector<double> gains_vec_;
-  std::vector<double> command_;
-  ros::Subscriber sub_command_;
   KDL::Chain kdl_chain_;
-  KDL::JntArray jnt_des_ik;
+  ros::Subscriber sub_command_;
+  ros::Subscriber sub_gains_;
+
+  KDL::Frame x_;		//current pose
+  KDL::Frame x_des_;	//desired pose
+
+  KDL::Twist x_err_;
+
+  KDL::JntArray q_cmd_; // computed set points
+
+  KDL::Jacobian J_;	//Jacobian
+
+  Eigen::MatrixXd J_pinv_;
+  Eigen::Matrix<double,3,3> skew_;
+
+  struct quaternion_
+  {
+    KDL::Vector v;
+    double a;
+  } quat_curr_, quat_des_;
+
+  KDL::Vector v_temp_;
+  
+  int cmd_flag_;
+  
+  boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;
+  boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
+  //boost::scoped_ptr<KDL::ChainIkSolverVel_pinv> ik_vel_solver_;
+  //boost::scoped_ptr<KDL::ChainIkSolverPos_NR_JL> ik_pos_solver_;
+
+  KDL::JntArrayAcc joint_msr_states_, joint_des_states_;
+
+  std::vector<double> command_;
+
 };
 
 PLUGINLIB_EXPORT_CLASS(panda_simulation::CartesianPoseController, controller_interface::ControllerBase);
