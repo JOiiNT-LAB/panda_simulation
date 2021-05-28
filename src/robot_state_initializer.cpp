@@ -7,8 +7,6 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "robot_state_initializer_node");
   ros::NodeHandle node_handle;
 
-  std::vector<double> panda_ready_state{{0, -M_PI_4, 0, -3 * M_PI_4, 0, M_PI_2, M_PI_4}};
-
   // define variables
   std::string cartesian_position_command_topic{"/cartesian_pose_controller/command"},
       controller_manager_switch_topic{"/controller_manager/switch_controller"};

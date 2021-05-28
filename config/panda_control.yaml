@@ -70,4 +70,4 @@
             1, 1, 1, 1, 1, 1, 1
         ]
         root_name : panda_link0  #define root and ee of the kinematic chain for kinematic inversion
-        tip_name  : panda_link7
+        tip_name  : panda_link8

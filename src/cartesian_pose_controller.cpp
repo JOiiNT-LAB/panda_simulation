@@ -38,20 +38,13 @@ namespace panda_simulation {
 class CartesianPoseController : public controller_interface::Controller<hardware_interface::PositionJointInterface> {
   bool init(hardware_interface::PositionJointInterface *hw, ros::NodeHandle &n) {
 
-    printf("Starting control node \n ");
     std::vector<std::string> joint_names;
     if (!n.getParam("joint_names", joint_names)) {
       ROS_ERROR("Could not read joint names from param server");
       return false;
     }
 
-    // retrieve gains
-    if (!n.getParam("gains", gains_vec_)) {
-      ROS_ERROR("Could not read joint gains from param server");
-      return false;
-    }
-
-    for (auto &joint_name : joint_names) {
+     for (auto &joint_name : joint_names) {
       joint_handles_.push_back(hw->getHandle(joint_name));
     }
 
@@ -59,20 +52,20 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     /////////////////     DEFINE ROBOT CHAIN          /////////////////////////
     ///////////////////////////////////////////////////////////////////////////
 
-    std::string arm_description, root_name, tip_name;
+    std::string robot_description, root_name, tip_name;
     KDL::Tree kdl_tree_;
     unsigned int num_joints;
-    if (!ros::param::search(n.getNamespace(),"arm_description", arm_description))
+    if (!ros::param::search(n.getNamespace(),"robot_description", robot_description))
             {
-                ROS_ERROR_STREAM("KinematicChainControllerBase: No robot description (URDF) found on parameter server ("<<n.getNamespace()<<"/arm_description)");
+                ROS_ERROR_STREAM("KinematicChainControllerBase: No robot description (URDF) found on parameter server ("<<n.getNamespace()<<"/robot_description)");
                 return false;
             }
    std::string xml_string;
-   if (n.hasParam(arm_description))
-       n.getParam(arm_description.c_str(), xml_string);
+   if (n.hasParam(robot_description))
+       n.getParam(robot_description.c_str(), xml_string);
    else
    {
-       ROS_ERROR("Parameter %s not set, shutting down node...", arm_description.c_str());
+       ROS_ERROR("Parameter %s not set, shutting down node...", robot_description.c_str());
        n.shutdown();
        return false;
    }
@@ -90,11 +83,11 @@ class CartesianPoseController : public controller_interface::Controller<hardware
 
    if (xml_string.size() == 0)
            {
-               ROS_ERROR("Unable to load robot model from parameter %s",arm_description.c_str());
+               ROS_ERROR("Unable to load robot model from parameter %s",robot_description.c_str());
                n.shutdown();
                return false;
            }
-    ROS_DEBUG("%s content\n%s", arm_description.c_str(), xml_string.c_str());
+    ROS_DEBUG("%s content\n%s", robot_description.c_str(), xml_string.c_str());
 
     urdf::Model model;
     if (!model.initString(xml_string))
@@ -113,7 +106,7 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     }
     printf("root name %s \n",root_name.c_str());
     printf("tip name %s \n",tip_name.c_str());
-    printf("robot name %s \n",arm_description.c_str());
+    printf("robot name %s \n",robot_description.c_str());
     printf("tree size %i \n",kdl_tree_.getNrOfJoints());
     printf("tree n segments %i \n",kdl_tree_.getNrOfSegments());
 
@@ -133,9 +126,8 @@ class CartesianPoseController : public controller_interface::Controller<hardware
         return false;
     }
 
-    q_cmd_.resize(kdl_chain_.getNrOfJoints());
     J_.resize(kdl_chain_.getNrOfJoints());
-       
+
     joint_msr_states_.resize(kdl_chain_.getNrOfJoints());
     joint_des_states_.resize(kdl_chain_.getNrOfJoints());
     // get joint positions
@@ -150,16 +142,11 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     jnt_to_jac_solver_.reset(new KDL::ChainJntToJacSolver(kdl_chain_));
     fk_pos_solver_.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_));
     fk_pos_solver_->JntToCart(joint_msr_states_.q, x_);
-
     
     //Desired posture is the current one
     x_des_ = x_;
 
     cmd_flag_ = 0;
-    
-
-    /*sub_command_ = n.subscribe<std_msgs::Float64MultiArray>(std::string("command"), 1,
-                                                            &CartesianPoseController::setCommandCallback, this);//\brief arm_description*/
     
     sub_command_ = n.subscribe("command", 1, &CartesianPoseController::setCommandCallback, this);
 
@@ -175,8 +162,6 @@ class CartesianPoseController : public controller_interface::Controller<hardware
             joint_msr_states_.q(i) = joint_handles_[i].getPosition();
         }
         
-        //printf("%i",cmd_flag_);
-
         if (cmd_flag_)
         {
 
@@ -223,15 +208,6 @@ class CartesianPoseController : public controller_interface::Controller<hardware
             for (int i = 0; i < joint_handles_.size(); i++)
                 joint_des_states_.q(i) += period.toSec()*joint_des_states_.qdot(i);
 
-            // joint limits saturation
-            /*for (int i =0;  i < joint_handles_.size(); i++)
-            {
-                if (joint_des_states_.q(i) < joint_limits_.min(i))
-                    joint_des_states_.q(i) = joint_limits_.min(i);
-                if (joint_des_states_.q(i) > joint_limits_.max(i))
-                    joint_des_states_.q(i) = joint_limits_.max(i);
-            }*/
-
             if (Equal(x_, x_des_, 0.005))
             {
                 ROS_INFO("On target");
@@ -248,7 +224,6 @@ class CartesianPoseController : public controller_interface::Controller<hardware
 
   void setCommandCallback(const panda_simulation::PoseRPY::ConstPtr &msg) {
     
-     printf("DEBUG callback \n");
      KDL::Frame frame_des_;
 
         switch(msg->id)
@@ -287,45 +262,19 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     }
 
   void starting(const ros::Time &time) {
-    printf("DEBUG Staring \n");
   }
 
   void stopping(const ros::Time &time) {}
-  
-  /*void getinversekinematic(){
-
-    ChainFkSolverPos_recursive fk_solver_ = ChainFkSolverPos_recursive(kdl_chain_);
-    ChainIkSolverVel_pinv ik_solver_vel_ = ChainIkSolverVel_pinv(kdl_chain_);
-    ChainIkSolverPos_NR ik_solver_(kdl_chain_, fk_solver_, ik_solver_vel_, 1000, 100);
-
-    KDL::JntArray jnt_pos_in_((kdl_chain_.getNrOfJoints()));
-    jnt_des_ik_.resize(kdl_chain_.getNrOfJoints());
-
-    //Convert F to our root_frame
-    //tf_listener.transformPose(root_name, transform, transform_root);
-       
-    for (unsigned int i = 0; i < kdl_chain_.getNrOfJoints(); i++){
-            jnt_pos_in_(i) = joint_handles_[i].getPosition();
-        }
-
-    bool kinematics_status;
-    kinematics_status = ik_solver_.CartToJnt(jnt_pos_in_,x_des_,jnt_des_ik_);
-
-  }*/
 
 private:
   std::vector<hardware_interface::JointHandle> joint_handles_;
-  std::vector<double> gains_vec_;
   KDL::Chain kdl_chain_;
   ros::Subscriber sub_command_;
-  ros::Subscriber sub_gains_;
 
   KDL::Frame x_;		//current pose
   KDL::Frame x_des_;	//desired pose
 
   KDL::Twist x_err_;
-
-  KDL::JntArray q_cmd_; // computed set points
 
   KDL::Jacobian J_;	//Jacobian
 
@@ -344,13 +293,8 @@ private:
   
   boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;
   boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
-  //boost::scoped_ptr<KDL::ChainIkSolverVel_pinv> ik_vel_solver_;
-  //boost::scoped_ptr<KDL::ChainIkSolverPos_NR_JL> ik_pos_solver_;
 
   KDL::JntArrayAcc joint_msr_states_, joint_des_states_;
-
-  std::vector<double> command_;
-
 };
 
 PLUGINLIB_EXPORT_CLASS(panda_simulation::CartesianPoseController, controller_interface::ControllerBase);
