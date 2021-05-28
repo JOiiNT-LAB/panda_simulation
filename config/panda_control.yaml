@@ -28,6 +28,21 @@
         state_publish_rate: 25
     joint_position_controller:
         type: panda_simulation/JointPositionController
+        # arm_id: panda
+        joint_names:
+            - panda_joint1
+            - panda_joint2
+            - panda_joint3
+            - panda_joint4
+            - panda_joint5
+            - panda_joint6
+            - panda_joint7
+        gains: [
+            1, 1, 1, 1, 1, 1, 1
+        ]
+
+    joint_velocity_controller:
+        type: alan/JointVelocityController
         arm_id: panda
         joint_names:
             - panda_joint1
@@ -40,3 +55,6 @@
         gains: [
             1, 1, 1, 1, 1, 1, 1
         ]
+        cartesian_pose_controller:
+            type: franka_example_controllers/CartesianPoseExampleController
+            arm_id: panda

@@ -1,3 +1,4 @@
+<?xml version="1.0" ?>
 <launch>
     <param name="robot_description" command="$(find xacro)/xacro --inorder $(find franka_description)/robots/panda_arm_hand.urdf.xacro" />
 
@@ -26,7 +27,7 @@
 
 
     <!-- load the controllers -->
-    <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="joint_state_controller panda_arm_controller" />
+    <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="joint_state_controller joint_position_controller" />
     <node if="$(arg load_gripper)" name="controller_spawner_hand" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="panda_hand_controller" />
 
 
@@ -46,20 +47,15 @@
 
     <node name="joint_state_desired_publisher" pkg="topic_tools" type="relay" args="joint_states joint_states_desired" />
 
-    <!-- launch robot control node for moveit motion planning -->
+    <!-- launch robot control node for moveit motion planning-->
     <node pkg="panda_simulation" type="robot_control_node" name="robot_control_node" output="screen" />
 
-    <!-- load (not start!) custom joint position controller -->
+    <!-- load (not start!) custom joint position controller-->
     <node pkg="controller_manager" type="spawner" name="joint_position_launcher" args="--stopped joint_position_controller" />
 
-    <!-- run custom node for automatic intialization -->
+    <!-- run custom node for automatic intialization-->
     <node pkg="panda_simulation" type="robot_state_initializer_node" name="robot_state_initializer_node" />
-
-    <!-- for web interface -->
-    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
-        <arg name="port" value="9090" />
-    </include>
-
-    <node pkg="tf2_web_republisher" type="tf2_web_republisher" name="tf2_web_republisher" />
-
+    <!--<node name="move_to_start" pkg="franka_example_controllers" type="move_to_start.py" output="screen" required="true" />
+    <node name="controller_spawner_franka" pkg="controller_manager" type="spawner" respawn="false" output="screen" args="cartesian_pose_controller" />
+    -->
 </launch>

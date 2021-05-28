@@ -9,6 +9,7 @@ namespace panda_simulation {
 
 class JointPositionController : public controller_interface::Controller<hardware_interface::PositionJointInterface> {
   bool init(hardware_interface::PositionJointInterface *hw, ros::NodeHandle &n) {
+
     std::vector<std::string> joint_names;
     if (!n.getParam("joint_names", joint_names)) {
       ROS_ERROR("Could not read joint names from param server");

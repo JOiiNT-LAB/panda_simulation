@@ -6,7 +6,7 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "robot_state_initializer_node");
   ros::NodeHandle node_handle;
 
-  std::vector<double> panda_ready_state{0, -0.785, 0, -2.356, 0, 1.571, 0.785};
+  std::vector<double> panda_ready_state{{0, -M_PI_4, 0, -3 * M_PI_4, 0, M_PI_2, M_PI_4}};
 
   // define variables
   std::string joint_position_command_topic{"/joint_position_controller/command"},
