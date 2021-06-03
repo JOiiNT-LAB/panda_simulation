@@ -147,6 +147,24 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     x_des_ = x_;
 
     cmd_flag_ = 0;
+
+
+    joint_limits_.min.resize(kdl_chain_.getNrOfJoints());
+    joint_limits_.max.resize(kdl_chain_.getNrOfJoints());
+    joint_limits_.center.resize(kdl_chain_.getNrOfJoints());
+    qo_dot_.resize(kdl_chain_.getNrOfJoints());
+    proj_.resize(kdl_chain_.getNrOfJoints());
+    In_ = Eigen::MatrixXd::Identity(kdl_chain_.getNrOfJoints(),kdl_chain_.getNrOfJoints());
+    
+    for (int joint_num = 0; joint_num < kdl_chain_.getNrOfJoints(); joint_num++)
+        {
+            joint_limits_.max(joint_num) = joint_max_[joint_num];//joint_->limits->upper;
+            joint_limits_.min(joint_num) = joint_min_[joint_num];//joint_->limits->lower;
+            joint_limits_.center(joint_num) = (joint_limits_.min(joint_num) + joint_limits_.max(joint_num))/2;
+            //joint_msr_states_.q(joint_num) = joint_limits_.center(joint_num);
+            joint_des_states_.q(joint_num) = joint_limits_.center(joint_num);
+            //std::cout << joint_limits_.center(joint_num) << " " << joint_msr_states_.q(joint_num) << "\n";
+        }
     
     sub_command_ = n.subscribe("command", 1, &CartesianPoseController::setCommandCallback, this);
 
@@ -186,7 +204,7 @@ class CartesianPoseController : public controller_interface::Controller<hardware
             // end-effector orientation error
             x_err_.rot = quat_curr_.a*quat_des_.v - quat_des_.a*quat_curr_.v - v_temp_;
 
-            
+
             // computing Jacobian
             jnt_to_jac_solver_->JntToJac(joint_msr_states_.q, J_);
             
@@ -194,26 +212,41 @@ class CartesianPoseController : public controller_interface::Controller<hardware
             // computing J_pinv_
             pseudo_inverse(J_.data, J_pinv_);
 
+
+            // computing Null Projection
+            for (int i = 0; i < J_pinv_.rows(); i++)
+            {
+                proj_(i) = 0.0;
+                //qo_dot_(i) = (joint_limits_.center(i)-joint_msr_states_.q(i));
+                qo_dot_(i) = -pow((joint_limits_.max(i)-joint_limits_.min(i)),2)*(2*joint_msr_states_.q(i)-joint_limits_.max(i)-joint_limits_.min(i))
+                            /(4*pow((joint_limits_.max(i)-joint_msr_states_.q(i)),2)*pow((joint_msr_states_.q(i)-joint_limits_.min(i)),2));
+                for (int k = 0; k < J_pinv_.cols(); k++)
+                {
+                    proj_(i) += (In_(i,k)-J_pinv_(i,k)*J_(k,i))*qo_dot_(i)*ko_;
+                }
+            }
+            
             // computing q_dot
             for (int i = 0; i < J_pinv_.rows(); i++)
             {
                 joint_des_states_.qdot(i) = 0.0;
                 for (int k = 0; k < J_pinv_.cols(); k++)
+                {
                     joint_des_states_.qdot(i) += J_pinv_(i,k)*x_err_(k); //removed scaling factor of .7
-          
+                }
+                joint_des_states_.qdot(i) += proj_(i);
             }
-
             
             // integrating q_dot -> getting q (Euler method)
             for (int i = 0; i < joint_handles_.size(); i++)
                 joint_des_states_.q(i) += period.toSec()*joint_des_states_.qdot(i);
 
-            if (Equal(x_, x_des_, 0.005))
+            /*if (Equal(x_, x_des_, 0.005))
             {
                 ROS_INFO("On target");
                 cmd_flag_ = 0;
                 printf("Position reached \n");
-            }
+            }*/
         }
     
     for (int i = 0; i < joint_handles_.size(); i++)
@@ -267,34 +300,49 @@ class CartesianPoseController : public controller_interface::Controller<hardware
   void stopping(const ros::Time &time) {}
 
 private:
-  std::vector<hardware_interface::JointHandle> joint_handles_;
-  KDL::Chain kdl_chain_;
-  ros::Subscriber sub_command_;
+    std::vector<hardware_interface::JointHandle> joint_handles_;
+    KDL::Chain kdl_chain_;
+    ros::Subscriber sub_command_;
 
-  KDL::Frame x_;		//current pose
-  KDL::Frame x_des_;	//desired pose
+    KDL::Frame x_;		//current pose
+    KDL::Frame x_des_;	//desired pose
 
-  KDL::Twist x_err_;
+    KDL::Twist x_err_;
 
-  KDL::Jacobian J_;	//Jacobian
+    KDL::Jacobian J_;	//Jacobian
 
-  Eigen::MatrixXd J_pinv_;
-  Eigen::Matrix<double,3,3> skew_;
+    Eigen::MatrixXd J_pinv_;
+    Eigen::Matrix<double,3,3> skew_;
 
-  struct quaternion_
-  {
+    struct quaternion_
+    {
     KDL::Vector v;
     double a;
-  } quat_curr_, quat_des_;
+    } quat_curr_, quat_des_;
 
-  KDL::Vector v_temp_;
-  
-  int cmd_flag_;
-  
-  boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;
-  boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
+    KDL::Vector v_temp_;
 
-  KDL::JntArrayAcc joint_msr_states_, joint_des_states_;
+    int cmd_flag_;
+
+    boost::scoped_ptr<KDL::ChainJntToJacSolver> jnt_to_jac_solver_;
+    boost::scoped_ptr<KDL::ChainFkSolverPos_recursive> fk_pos_solver_;
+
+    KDL::JntArrayAcc joint_msr_states_, joint_des_states_;
+
+    KDL::JntArray qo_dot_;
+    KDL::JntArray proj_;
+
+    struct limits_
+    {
+        KDL::JntArray min;
+        KDL::JntArray max;
+        KDL::JntArray center;
+    } joint_limits_;
+
+    std::vector<float> joint_max_ = { 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973, 0.0};
+    std::vector<float> joint_min_ = {-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973, 0.0};
+    Eigen::MatrixXd In_;
+    float ko_ = 0.1;
 };
 
 PLUGINLIB_EXPORT_CLASS(panda_simulation::CartesianPoseController, controller_interface::ControllerBase);

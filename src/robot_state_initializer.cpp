@@ -50,13 +50,13 @@ int main(int argc, char **argv) {
   // 2. publish the desired joint position to the custom controller
   panda_simulation::PoseRPY command_msg;
 
-  command_msg.id                 = 0.0;
-  command_msg.orientation.roll   = 0.0;
-  command_msg.orientation.pitch  = 1.0;
+  command_msg.id                 = 0;
+  command_msg.orientation.roll   = 3.1416;
+  command_msg.orientation.pitch  = 0.0;
   command_msg.orientation.yaw    = 0.0;
-  command_msg.position.x         = 0.2;
+  command_msg.position.x         = 0.3;
   command_msg.position.y         = 0.0;
-  command_msg.position.z         = 0.8;
+  command_msg.position.z         = 0.6;
 
   /*std_msgs::Float64MultiArray command_msg;
   command_msg.data = panda_ready_state;*/
