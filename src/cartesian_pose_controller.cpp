@@ -155,15 +155,44 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     qo_dot_.resize(kdl_chain_.getNrOfJoints());
     proj_.resize(kdl_chain_.getNrOfJoints());
     In_ = Eigen::MatrixXd::Identity(kdl_chain_.getNrOfJoints(),kdl_chain_.getNrOfJoints());
+
+    urdf::LinkConstSharedPtr link_ = model.getLink(tip_name);
+    urdf::JointConstSharedPtr joint_;
+
     
+    for (int i = 0; i < kdl_chain_.getNrOfJoints() && link_; i++)
+        {
+            //ROS_INFO("Getting limits for joint: %s", joint_->name.c_str());
+            joint_ = model.getJoint(link_->parent_joint->name);  
+            int index = kdl_chain_.getNrOfJoints() - i - 1;
+
+            if (joint_->type == 6)
+            {
+                std::cout << "Joint type is Fixed" << "\n";
+                i--;
+            }
+            else
+            {
+                joint_limits_.min(index) = joint_->limits->lower;
+                joint_limits_.max(index) = joint_->limits->upper;
+                joint_limits_.center(index) = (joint_limits_.min(index) + joint_limits_.max(index))/2;
+                std::cout << "Joint type is not Fixed" << "\n";
+            }
+
+            link_ = model.getLink(link_->getParent()->name);    // Takes parent of the link
+            std::cout << "Counter:" << i << "\n";
+
+        }
+
     for (int joint_num = 0; joint_num < kdl_chain_.getNrOfJoints(); joint_num++)
         {
-            joint_limits_.max(joint_num) = joint_max_[joint_num];//joint_->limits->upper;
-            joint_limits_.min(joint_num) = joint_min_[joint_num];//joint_->limits->lower;
-            joint_limits_.center(joint_num) = (joint_limits_.min(joint_num) + joint_limits_.max(joint_num))/2;
+            //joint_limits_.max(joint_num) = joint_max_[joint_num];// joint_->limits->upper
+            //joint_limits_.min(joint_num) = joint_min_[joint_num];// joint_->limits->lower;
+            //joint_limits_.center(joint_num) = (joint_limits_.min(joint_num) + joint_limits_.max(joint_num))/2;
             //joint_msr_states_.q(joint_num) = joint_limits_.center(joint_num);
             joint_des_states_.q(joint_num) = joint_limits_.center(joint_num);
             //std::cout << joint_limits_.center(joint_num) << " " << joint_msr_states_.q(joint_num) << "\n";
+            //std::cout << kdl_chain_.getNrOfJoints() << "\n";
         }
     
     sub_command_ = n.subscribe("command", 1, &CartesianPoseController::setCommandCallback, this);
