@@ -39,54 +39,55 @@ class CartesianPoseController : public controller_interface::Controller<hardware
   bool init(hardware_interface::PositionJointInterface *hw, ros::NodeHandle &n) {
 
     std::vector<std::string> joint_names;
-    if (!n.getParam("joint_names", joint_names)) {
-      ROS_ERROR("Could not read joint names from param server");
-      return false;
+    if (!n.getParam("joint_names", joint_names))
+    {
+        ROS_ERROR("Could not read joint names from param server");
+        return false;
     }
 
-     for (auto &joint_name : joint_names) {
-      joint_handles_.push_back(hw->getHandle(joint_name));
+    for (auto &joint_name : joint_names)
+    {
+        joint_handles_.push_back(hw->getHandle(joint_name));
     }
 
     ////////////////////////////////////////////////////////////////////////////
     /////////////////     DEFINE ROBOT CHAIN          /////////////////////////
     ///////////////////////////////////////////////////////////////////////////
 
-    std::string robot_description, root_name, tip_name;
+    std::string robot_description, xml_string, root_name, tip_name;
     KDL::Tree kdl_tree_;
     unsigned int num_joints;
+
     if (!ros::param::search(n.getNamespace(),"robot_description", robot_description))
-            {
-                ROS_ERROR_STREAM("KinematicChainControllerBase: No robot description (URDF) found on parameter server ("<<n.getNamespace()<<"/robot_description)");
-                return false;
-            }
-   std::string xml_string;
-   if (n.hasParam(robot_description))
+    {
+        ROS_ERROR_STREAM("KinematicChainControllerBase: No robot description (URDF) found on parameter server ("<<n.getNamespace()<<"/robot_description)");
+        return false;
+    }
+    if (n.hasParam(robot_description))
        n.getParam(robot_description.c_str(), xml_string);
-   else
-   {
+    else
+    {
        ROS_ERROR("Parameter %s not set, shutting down node...", robot_description.c_str());
        n.shutdown();
        return false;
-   }
-   if (!n.getParam("root_name", root_name))
-           {
-               ROS_ERROR_STREAM("KinematicChainControllerBase: No root name found on parameter server ("<<n.getNamespace()<<"/root_name)");
-               return false;
-           }
-  
-   if (!n.getParam("tip_name", tip_name))
-           {
-               ROS_ERROR_STREAM("KinematicChainControllerBase: No tip name found on parameter server ("<<n.getNamespace()<<"/tip_name)");
-               return false;
-           }
+    }
+    if (!n.getParam("root_name", root_name))
+    {
+        ROS_ERROR_STREAM("KinematicChainControllerBase: No root name found on parameter server ("<<n.getNamespace()<<"/root_name)");
+        return false;
+    }
+    if (!n.getParam("tip_name", tip_name))
+    {
+        ROS_ERROR_STREAM("KinematicChainControllerBase: No tip name found on parameter server ("<<n.getNamespace()<<"/tip_name)");
+        return false;
+    }
 
-   if (xml_string.size() == 0)
-           {
-               ROS_ERROR("Unable to load robot model from parameter %s",robot_description.c_str());
-               n.shutdown();
-               return false;
-           }
+    if (xml_string.size() == 0)
+    {
+       ROS_ERROR("Unable to load robot model from parameter %s",robot_description.c_str());
+       n.shutdown();
+       return false;
+    }
     ROS_DEBUG("%s content\n%s", robot_description.c_str(), xml_string.c_str());
 
     urdf::Model model;
@@ -121,8 +122,8 @@ class CartesianPoseController : public controller_interface::Controller<hardware
         KDL::SegmentMap::iterator it;
 
         for( it=segment_map.begin(); it != segment_map.end(); it++ )
-          ROS_ERROR_STREAM( "    "<<(*it).first);
-        printf("get chain failed");
+            ROS_ERROR_STREAM( "    "<<(*it).first);
+            printf("get chain failed");
         return false;
     }
 
@@ -130,6 +131,7 @@ class CartesianPoseController : public controller_interface::Controller<hardware
 
     joint_msr_states_.resize(kdl_chain_.getNrOfJoints());
     joint_des_states_.resize(kdl_chain_.getNrOfJoints());
+
     // get joint positions
     for(int i=0; i < joint_handles_.size(); i++)
     {
@@ -143,104 +145,119 @@ class CartesianPoseController : public controller_interface::Controller<hardware
     fk_pos_solver_.reset(new KDL::ChainFkSolverPos_recursive(kdl_chain_));
     fk_pos_solver_->JntToCart(joint_msr_states_.q, x_);
     
-    //Desired posture is the current one
+    // Desired posture is the current one
     x_des_ = x_;
 
     cmd_flag_ = 0;
 
+    // initialize parameters for joint limit avoidance
+    if (n.hasParam("ko"))
+       n.getParam("ko", ko_);
+    else
+    {
+        ko_ = 0.01;
+        ROS_INFO("Parameter ko not set, Defaulting to %f", ko_);
+    }
+    ko_iter_ = ko_;
+    if (n.hasParam("err_pos"))
+       n.getParam("err_pos", err_pos_);
+    else
+    {
+        err_pos_ = 0.002;
+        ROS_INFO("Parameter position error not set, Defaulting to %f", err_pos_);
+    }
+    if (n.hasParam("err_rot"))
+       n.getParam("err_rot", err_rot_);
+    else
+    {
+        err_rot_ = 0.005;
+        ROS_INFO("Parameter orientation error not set, Defaulting to %f", err_rot_);
+    }
+    
+    qo_dot_.resize(kdl_chain_.getNrOfJoints());
+    proj_.resize(kdl_chain_.getNrOfJoints());
+    In_ = Eigen::MatrixXd::Identity(kdl_chain_.getNrOfJoints(),kdl_chain_.getNrOfJoints());
 
     joint_limits_.min.resize(kdl_chain_.getNrOfJoints());
     joint_limits_.max.resize(kdl_chain_.getNrOfJoints());
     joint_limits_.center.resize(kdl_chain_.getNrOfJoints());
-    qo_dot_.resize(kdl_chain_.getNrOfJoints());
-    proj_.resize(kdl_chain_.getNrOfJoints());
-    In_ = Eigen::MatrixXd::Identity(kdl_chain_.getNrOfJoints(),kdl_chain_.getNrOfJoints());
+
 
     urdf::LinkConstSharedPtr link_ = model.getLink(tip_name);
     urdf::JointConstSharedPtr joint_;
 
     
     for (int i = 0; i < kdl_chain_.getNrOfJoints() && link_; i++)
+    {
+        joint_ = model.getJoint(link_->parent_joint->name);  
+        int index = kdl_chain_.getNrOfJoints() - i - 1;
+
+        if (joint_->type == 6)  // Avoid fixed joints >> Not considered in the KDL chain
         {
-            //ROS_INFO("Getting limits for joint: %s", joint_->name.c_str());
-            joint_ = model.getJoint(link_->parent_joint->name);  
-            int index = kdl_chain_.getNrOfJoints() - i - 1;
-
-            if (joint_->type == 6)
-            {
-                std::cout << "Joint type is Fixed" << "\n";
-                i--;
-            }
-            else
-            {
-                joint_limits_.min(index) = joint_->limits->lower;
-                joint_limits_.max(index) = joint_->limits->upper;
-                joint_limits_.center(index) = (joint_limits_.min(index) + joint_limits_.max(index))/2;
-                std::cout << "Joint type is not Fixed" << "\n";
-            }
-
-            link_ = model.getLink(link_->getParent()->name);    // Takes parent of the link
-            std::cout << "Counter:" << i << "\n";
-
+            i--;
         }
-
-    for (int joint_num = 0; joint_num < kdl_chain_.getNrOfJoints(); joint_num++)
+        else                    // Get upper & lower limits of not-fixed joints 
         {
-            //joint_limits_.max(joint_num) = joint_max_[joint_num];// joint_->limits->upper
-            //joint_limits_.min(joint_num) = joint_min_[joint_num];// joint_->limits->lower;
-            //joint_limits_.center(joint_num) = (joint_limits_.min(joint_num) + joint_limits_.max(joint_num))/2;
-            //joint_msr_states_.q(joint_num) = joint_limits_.center(joint_num);
-            joint_des_states_.q(joint_num) = joint_limits_.center(joint_num);
-            //std::cout << joint_limits_.center(joint_num) << " " << joint_msr_states_.q(joint_num) << "\n";
-            //std::cout << kdl_chain_.getNrOfJoints() << "\n";
+            joint_limits_.min(index) = joint_->limits->lower;
+            joint_limits_.max(index) = joint_->limits->upper;
+            joint_limits_.center(index) = (joint_limits_.min(index) + joint_limits_.max(index))/2;
+            joint_des_states_.q(index) = joint_handles_[index].getPosition();
         }
+        link_ = model.getLink(link_->getParent()->name);    // Takes parent of the link
+    }
     
     sub_command_ = n.subscribe("command", 1, &CartesianPoseController::setCommandCallback, this);
 
-        return true;
+    return true;
   }
   
   
 
-  void update(const ros::Time &time, const ros::Duration &period) {
-    // get joint positions
+    void update(const ros::Time &time, const ros::Duration &period)
+    {
+        // get joint positions
         for(int i=0; i < joint_handles_.size(); i++)
         {
             joint_msr_states_.q(i) = joint_handles_[i].getPosition();
         }
-        
-        if (cmd_flag_)
+
+
+        // computing forward kinematics
+        fk_pos_solver_->JntToCart(joint_msr_states_.q, x_);
+
+        // end-effector position error
+        x_err_.vel = x_des_.p - x_.p;
+
+        // getting quaternion from rotation matrix
+        x_.M.GetQuaternion(quat_curr_.v(0),quat_curr_.v(1),quat_curr_.v(2),quat_curr_.a);
+        x_des_.M.GetQuaternion(quat_des_.v(0),quat_des_.v(1),quat_des_.v(2),quat_des_.a);
+        skew_symmetric(quat_des_.v, skew_);
+
+        for (int i = 0; i < skew_.rows(); i++)
         {
+            v_temp_(i) = 0.0;
+            for (int k = 0; k < skew_.cols(); k++)
+                v_temp_(i) += skew_(i,k)*(quat_curr_.v(k));
+        }
 
-            // computing forward kinematics
-            fk_pos_solver_->JntToCart(joint_msr_states_.q, x_);
+        // end-effector orientation error
+        x_err_.rot = quat_curr_.a*quat_des_.v - quat_des_.a*quat_curr_.v - v_temp_;
 
-            // end-effector position error
-            x_err_.vel = x_des_.p - x_.p;
-            // getting quaternion from rotation matrix
-            x_.M.GetQuaternion(quat_curr_.v(0),quat_curr_.v(1),quat_curr_.v(2),quat_curr_.a);
-            x_des_.M.GetQuaternion(quat_des_.v(0),quat_des_.v(1),quat_des_.v(2),quat_des_.a);
-
-            skew_symmetric(quat_des_.v, skew_);
-
-            for (int i = 0; i < skew_.rows(); i++)
-            {
-                v_temp_(i) = 0.0;
-                for (int k = 0; k < skew_.cols(); k++)
-                    v_temp_(i) += skew_(i,k)*(quat_curr_.v(k));
-            }
-
-            // end-effector orientation error
-            x_err_.rot = quat_curr_.a*quat_des_.v - quat_des_.a*quat_curr_.v - v_temp_;
+        // computing pose error
+        /*pose_err_ = 0;
+        for (int i = 0; i < 6; i++)
+        {
+            pose_err_ += pow(x_err_(i),2);
+        }*/
 
 
+        if (cmd_flag_)
+        {        
             // computing Jacobian
             jnt_to_jac_solver_->JntToJac(joint_msr_states_.q, J_);
-            
 
             // computing J_pinv_
             pseudo_inverse(J_.data, J_pinv_);
-
 
             // computing Null Projection
             for (int i = 0; i < J_pinv_.rows(); i++)
@@ -251,7 +268,7 @@ class CartesianPoseController : public controller_interface::Controller<hardware
                             /(4*pow((joint_limits_.max(i)-joint_msr_states_.q(i)),2)*pow((joint_msr_states_.q(i)-joint_limits_.min(i)),2));
                 for (int k = 0; k < J_pinv_.cols(); k++)
                 {
-                    proj_(i) += (In_(i,k)-J_pinv_(i,k)*J_(k,i))*qo_dot_(i)*ko_;
+                    proj_(i) += (In_(i,k)-J_pinv_(i,k)*J_(k,i))*qo_dot_(i)*ko_iter_;
                 }
             }
             
@@ -270,19 +287,30 @@ class CartesianPoseController : public controller_interface::Controller<hardware
             for (int i = 0; i < joint_handles_.size(); i++)
                 joint_des_states_.q(i) += period.toSec()*joint_des_states_.qdot(i);
 
-            /*if (Equal(x_, x_des_, 0.005))
+
+
+            //std::cout << "\nx_err_pos: " <<  x_err_.vel(0) << "\ny_err_pos: " <<  x_err_.vel(1) << "\nz_err_pos: " <<  x_err_.vel(2);
+            //std::cout << "\nr_err_pos: " <<  x_err_.rot(0) << "\np_err_pos: " <<  x_err_.rot(1) << "\ny_err_pos: " <<  x_err_.rot(2);
+            //std::cout << "\nko_iter_: " << ko_iter_ << "\npose error: " << sqrt(pose_err_) << "\n";
+            
+            // stop condition
+            if (Equal(x_err_.vel(0), 0, err_pos_)&&Equal(x_err_.vel(1), 0, err_pos_)&&Equal(x_err_.vel(2), 0, err_pos_)
+                &&Equal(x_err_.rot(0), 0, err_rot_)&&Equal(x_err_.rot(1), 0, err_rot_)&&Equal(x_err_.rot(2), 0, err_rot_))
             {
-                ROS_INFO("On target");
                 cmd_flag_ = 0;
-                printf("Position reached \n");
-            }*/
+                printf("Pose reached \n");
+            }
+            else
+            {
+                ko_iter_ = ko_iter_*0.999;
+            }
         }
     
-    for (int i = 0; i < joint_handles_.size(); i++)
-    {
-        joint_handles_[i].setCommand(joint_des_states_.q(i));
+        for (int i = 0; i < joint_handles_.size(); i++)
+        {
+            joint_handles_[i].setCommand(joint_des_states_.q(i));
+        }
     }
-  }
 
   void setCommandCallback(const panda_simulation::PoseRPY::ConstPtr &msg) {
     
@@ -321,12 +349,31 @@ class CartesianPoseController : public controller_interface::Controller<hardware
 
         x_des_ = frame_des_;
         cmd_flag_ = 1;
+        
+        ko_iter_ = ko_;
+        /*ko_iter_ = ko_*sqrt(pose_err_);
+        if (ko_iter_ > 2*ko_)
+        {
+            ko_iter_ = 2*ko_;
+        }
+        else if (ko_iter_ < 0.05*ko_)
+        {
+            ko_iter_ = 0.05*ko_;
+        }
+        std::cout << "\nko_iter_: " << ko_iter_ << "\n";*/
     }
 
-  void starting(const ros::Time &time) {
-  }
+    void starting(const ros::Time &time) {
+        for (int i = 0; i < kdl_chain_.getNrOfJoints(); i++)
+        {
+            joint_des_states_.q(i) = joint_handles_[i].getPosition();
+        }
+        cmd_flag_ = 0;
+    }
 
-  void stopping(const ros::Time &time) {}
+    void stopping(const ros::Time &time) {
+        cmd_flag_ = 0;
+    }
 
 private:
     std::vector<hardware_interface::JointHandle> joint_handles_;
@@ -368,10 +415,8 @@ private:
         KDL::JntArray center;
     } joint_limits_;
 
-    std::vector<float> joint_max_ = { 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973, 0.0};
-    std::vector<float> joint_min_ = {-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973, 0.0};
     Eigen::MatrixXd In_;
-    float ko_ = 0.1;
+    float ko_, ko_iter_, pose_err_, err_pos_, err_rot_;
 };
 
 PLUGINLIB_EXPORT_CLASS(panda_simulation::CartesianPoseController, controller_interface::ControllerBase);

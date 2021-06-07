@@ -69,5 +69,8 @@
         gains: [
             1, 1, 1, 1, 1, 1, 1
         ]
-        root_name : panda_link0  #define root and ee of the kinematic chain for kinematic inversion
+        root_name : panda_link0     #define root and ee of the kinematic chain for kinematic inversion
         tip_name  : panda_link8
+        ko_ : 0.01                  #weight of joint limit avoidance
+        float err_pos_ : 0.002      #position error
+        float err_rot_ : 0.005      #orientation error

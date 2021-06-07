@@ -54,9 +54,9 @@ int main(int argc, char **argv) {
   command_msg.orientation.roll   = 3.1416;
   command_msg.orientation.pitch  = 0.0;
   command_msg.orientation.yaw    = 0.0;
-  command_msg.position.x         = 0.3;
+  command_msg.position.x         = 0.6;
   command_msg.position.y         = 0.0;
-  command_msg.position.z         = 0.6;
+  command_msg.position.z         = 0.3;
 
   /*std_msgs::Float64MultiArray command_msg;
   command_msg.data = panda_ready_state;*/
