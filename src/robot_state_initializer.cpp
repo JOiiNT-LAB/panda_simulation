@@ -1,7 +1,7 @@
 #include <controller_manager_msgs/SwitchController.h>
 #include <ros/ros.h>
 #include <std_msgs/Float64MultiArray.h>
-#include <panda_simulation/PoseRPY.h>
+#include <gazebo_arm_controllers/PoseRPY.h>
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "robot_state_initializer_node");
@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
   ros::ServiceClient switch_controller_client =
       node_handle.serviceClient<controller_manager_msgs::SwitchController>(controller_manager_switch_topic);
   ros::Publisher cartesian_position_publisher =
-      node_handle.advertise<panda_simulation::PoseRPY>(cartesian_position_command_topic, 1);
+      node_handle.advertise<gazebo_arm_controllers::PoseRPY>(cartesian_position_command_topic, 1);
 
   // sleep for 2 seconds in order to make sure that the system is up and running
   ros::Duration(2.0).sleep();
@@ -48,15 +48,15 @@ int main(int argc, char **argv) {
   }
 
   // 2. publish the desired joint position to the custom controller
-  panda_simulation::PoseRPY command_msg;
+  gazebo_arm_controllers::PoseRPY command_msg;
 
   command_msg.id                 = 0;
   command_msg.orientation.roll   = 3.1416;
   command_msg.orientation.pitch  = 0.0;
   command_msg.orientation.yaw    = 0.0;
-  command_msg.position.x         = 0.6;
+  command_msg.position.x         = 0.3;
   command_msg.position.y         = 0.0;
-  command_msg.position.z         = 0.3;
+  command_msg.position.z         = 0.6;
 
   /*std_msgs::Float64MultiArray command_msg;
   command_msg.data = panda_ready_state;*/

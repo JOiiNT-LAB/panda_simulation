@@ -27,7 +27,7 @@
 
         state_publish_rate: 25
     joint_position_controller:
-        type: panda_simulation/JointPositionController
+        type: gazebo_arm_controllers/JointPositionController
         # arm_id: panda
         joint_names:
             - panda_joint1
@@ -57,7 +57,7 @@
         ]
     
     cartesian_pose_controller:
-        type: panda_simulation/CartesianPoseController
+        type: gazebo_arm_controllers/IKPoseController
         joint_names:
             - panda_joint1
             - panda_joint2

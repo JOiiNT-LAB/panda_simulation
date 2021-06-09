@@ -1,3 +1,0 @@
-<library path="lib/libpanda_simulation_controllers_lib">
-<class name="panda_simulation/CartesianPoseController" type="panda_simulation::CartesianPoseController" base_class_type="controller_interface::ControllerBase" />
-</library>
